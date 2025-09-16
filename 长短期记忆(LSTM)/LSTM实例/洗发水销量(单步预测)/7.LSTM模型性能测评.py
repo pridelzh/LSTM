@@ -2,7 +2,7 @@ from pandas import DataFrame
 from pandas import Series
 from pandas import concat
 from pandas import read_csv
-from pandas import datetime
+from datetime import datetime
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
@@ -63,12 +63,17 @@ def fit_lstm(train, batch_size, nb_epoch, neurons):
 	X, y = train[:, 0:-1], train[:, -1]
 	X = X.reshape(X.shape[0], 1, X.shape[1])
 	model = Sequential()
-	model.add(LSTM(neurons, batch_input_shape=(batch_size, X.shape[1], X.shape[2]), stateful=True))
+	from keras.layers import Input
+	model.add(Input(batch_shape=(batch_size, X.shape[1], X.shape[2])))
+	model.add(LSTM(neurons, stateful=True))
 	model.add(Dense(1))
 	model.compile(loss='mean_squared_error', optimizer='adam')
 	for i in range(nb_epoch):
 		model.fit(X, y, epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
-		model.reset_states()
+		# 确保我们访问的是LSTM层
+		for layer in model.layers:
+			if hasattr(layer, 'reset_states'):
+				layer.reset_states()
 	return model
 
 # make a one-step forecast
@@ -78,7 +83,7 @@ def forecast_lstm(model, batch_size, X):
 	return yhat[0,0]
 
 # load dataset
-series = read_csv('shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
+series = read_csv('长短期记忆(LSTM)\LSTM实例\洗发水销量(单步预测)\stocktest.csv', header=0, parse_dates=[0], index_col=0, date_parser=parser)
 
 # transform data to be stationary
 raw_values = series.values
@@ -99,7 +104,7 @@ repeats = 30
 error_scores = list()
 for r in range(repeats):
 	# fit the model
-	lstm_model = fit_lstm(train_scaled, 1, 3000, 4)
+	lstm_model = fit_lstm(train_scaled, 1, 300, 4)
 	# forecast the entire training dataset to build up state for forecasting
 	train_reshaped = train_scaled[:, 0].reshape(len(train_scaled), 1, 1)
 	lstm_model.predict(train_reshaped, batch_size=1)

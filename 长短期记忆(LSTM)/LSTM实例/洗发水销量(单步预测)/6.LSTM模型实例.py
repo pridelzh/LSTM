@@ -2,7 +2,7 @@ from pandas import DataFrame
 from pandas import Series
 from pandas import concat
 from pandas import read_csv
-from pandas import datetime
+from datetime import datetime
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
@@ -80,12 +80,17 @@ def fit_lstm(train, batch_size, nb_epoch, neurons):
     # 将2D数据拼接成3D数据，形状为[23*1*1]
     X = X.reshape(X.shape[0], 1, X.shape[1])
     model = Sequential()
-    # neurons是神经元个数，batch_input_shape是输入形状(样本数，时间步，每个时间步的步长)，
+    from keras.layers import Input, Bidirectional
+    # neurons是神经元个数，input_shape是输入形状(时间步，每个时间步的步长)，
     # stateful是状态保留,reset_states是重置网络状态，网络状态和网络权重是两回事
     # 1.同一批数据反复训练很多次，可保留每次训练状态供下次使用
     # 2.不同批数据之间有顺序关联，可保留每次训练状态（一只股票被差分成多个批次）
     # 3.不同批次数据，数据之间没有关联，则不传递网络状态（多只不同股票之间）
-    model.add(LSTM(neurons, batch_input_shape=(batch_size, X.shape[1], X.shape[2]), stateful=True))
+    model.add(Input(batch_shape=(batch_size, X.shape[1], X.shape[2])))
+    # 添加第一层双向LSTM
+    model.add(Bidirectional(LSTM(neurons, stateful=True, return_sequences=True)))
+    # 添加第二层双向LSTM
+    model.add(Bidirectional(LSTM(neurons, stateful=True)))
     model.add(Dense(1))
     # 定义损失函数和优化器
     model.compile(loss='mean_squared_error', optimizer='adam')
@@ -93,7 +98,9 @@ def fit_lstm(train, batch_size, nb_epoch, neurons):
         # shuffle=False是不混淆数据顺序
         model.fit(X, y, epochs=1, batch_size=batch_size, verbose=1, shuffle=False)
         # 每训练完一个轮回，重置一次网络状态，网络状态和网络权重是两个东西
-        model.reset_states()
+        # 现在有4个需要重置状态的层（2个双向LSTM层，每层包含前向和后向2个LSTM）
+        model.layers[0].reset_states()  # 第一个双向LSTM层
+        model.layers[1].reset_states()  # 第二个双向LSTM层
     return model
 
 # 开始单步预测，model是训练好的模型，batch_size是时间步，X是一个一维数组
@@ -109,7 +116,7 @@ def forecast_lstm(model, batch_size, X):
     
 
 # 加载数据
-series = read_csv('shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
+series = read_csv('长短期记忆(LSTM)\LSTM实例\洗发水销量(单步预测)\shampoo-sales.csv', header=0, parse_dates=[0], index_col=0, date_parser=parser)
 # 最后N条数据作为测试数据
 testNum = 12
 
@@ -128,7 +135,7 @@ train, test = supervised_values[0:-testNum], supervised_values[-testNum:]
 scaler, train_scaled, test_scaled = scale(train, test)
 
 # 构建一个LSTM网络模型，并训练，样本数：1，循环训练次数：3000，LSTM层神经元个数为4
-lstm_model = fit_lstm(train_scaled, 1, 10000, 4)
+lstm_model = fit_lstm(train_scaled, 1, 100, 4)
 # 重构输入数据的形状，
 print(train_scaled)
 train_reshaped = train_scaled[:, 0].reshape(len(train_scaled), 1, 1)
